@@ -1,0 +1,13 @@
+# Render Blueprint (optional): one Web service. Configure secrets in the Render dashboard.
+# https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: hubspot-oauth-cwa
+    runtime: node
+    plan: free
+    rootDir: .
+    buildCommand: npm ci --prefix client && npm run build --prefix client && npm ci --prefix server
+    startCommand: SERVE_STATIC=true node server/src/index.js
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
