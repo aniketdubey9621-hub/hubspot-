@@ -1,7 +1,8 @@
 /**
  * - Dev: Vite proxies `/api/*` to the Node server.
- * - Prod same-origin (server serves `client/dist`): call API paths directly.
- * - Prod split hosts: set `VITE_API_BASE_URL` to the API origin (no trailing slash).
+ * - Vercel: set `VITE_API_BASE_URL=/api` at build time so requests hit `/api/connect`, `/api/contacts`, …
+ * - Docker / single Node serving static: leave `VITE_API_BASE_URL` unset (prod calls `/connect` at site root).
+ * - Split hosts: set `VITE_API_BASE_URL` to the API origin (no trailing slash).
  */
 export function apiUrl(path: string): string {
   const base = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
