@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiUrl, fetchJson } from './api';
 
-type ConnectResponse = { authorizeUrl: string };
+type ConnectResponse = {
+  authorizeUrl: string;
+  requestedScopes?: string[];
+  optionalScopes?: string[];
+};
 type ContactsResponse = {
   results: unknown[];
   paging: { next?: { after?: string } } | null;
