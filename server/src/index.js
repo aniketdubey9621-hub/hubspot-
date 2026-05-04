@@ -1,9 +1,13 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createApp } from './createApp.js';
-import { logStructured } from './logger.js';
+import dotenv from 'dotenv';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
+
+const { createApp } = await import('./createApp.js');
+const { logStructured } = await import('./logger.js');
+
 const PORT = Number(process.env.PORT) || 3001;
 
 const app = await createApp({

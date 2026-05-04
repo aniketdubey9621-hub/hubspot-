@@ -46,7 +46,24 @@ export function App() {
   const devMetaUrl = useMemo(() => apiUrl('/dev/token-meta'), []);
 
   useEffect(() => {
+    const pathname = window.location.pathname;
+    const search = window.location.search;
     const q = readQuery();
+
+    // HubSpot must redirect to the same URL as HUBSPOT_REDIRECT_URI. If that URL is the SPA
+    // (e.g. http://localhost:5173/callback), the code never hits the API — forward it so the
+    // server can exchange the code (requires redirect URI in HubSpot + .env to match this URL).
+    if (
+      pathname === '/callback' &&
+      q.code &&
+      q.state &&
+      !q.error &&
+      !q.oauth_error
+    ) {
+      window.location.replace(`${apiUrl('/callback')}${search}`);
+      return;
+    }
+
     if (q.connected === '1') {
       setBanner('HubSpot connected. You can load contacts.');
       window.history.replaceState({}, '', window.location.pathname);
