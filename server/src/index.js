@@ -26,8 +26,27 @@ const REDIRECT_URI = process.env.HUBSPOT_REDIRECT_URI || '';
 const STATE_SECRET = process.env.HUBSPOT_STATE_SECRET || '';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 const HUBSPOT_AUTH_BASE = 'https://app.hubspot.com/oauth/authorize';
-/** Space-separated scopes — must match app configuration */
-const SCOPES = process.env.HUBSPOT_SCOPES || 'crm.objects.contacts.read';
+/** HubSpot rejects the flow if this scope is not granted; always request it. */
+const REQUIRED_HUBSPOT_SCOPE = 'crm.objects.contacts.read';
+
+/**
+ * @param {string | undefined} raw from HUBSPOT_SCOPES (spaces or commas between scopes)
+ * @returns {string} space-separated scopes for the authorize URL
+ */
+function oauthScopeString(raw) {
+  const ordered = [REQUIRED_HUBSPOT_SCOPE];
+  const seen = new Set([REQUIRED_HUBSPOT_SCOPE]);
+  for (const part of String(raw ?? '').split(/[\s,]+/)) {
+    const s = part.trim();
+    if (s && !seen.has(s)) {
+      seen.add(s);
+      ordered.push(s);
+    }
+  }
+  return ordered.join(' ');
+}
+
+const SCOPES = oauthScopeString(process.env.HUBSPOT_SCOPES);
 
 const app = Fastify({ logger: false });
 
