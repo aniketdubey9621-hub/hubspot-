@@ -25,28 +25,83 @@ const CLIENT_SECRET = process.env.HUBSPOT_CLIENT_SECRET || '';
 const REDIRECT_URI = process.env.HUBSPOT_REDIRECT_URI || '';
 const STATE_SECRET = process.env.HUBSPOT_STATE_SECRET || '';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
-const HUBSPOT_AUTH_BASE = 'https://app.hubspot.com/oauth/authorize';
+
+function stripEnvQuotes(s) {
+  const t = String(s ?? '').trim();
+  if (t.length >= 2) {
+    const a = t[0];
+    const b = t[t.length - 1];
+    if ((a === '"' && b === '"') || (a === "'" && b === "'")) {
+      return t.slice(1, -1).trim();
+    }
+  }
+  return t;
+}
+
+/** Override for EU portals: https://app-eu1.hubspot.com/oauth/authorize */
+const HUBSPOT_AUTH_BASE =
+  stripEnvQuotes(process.env.HUBSPOT_OAUTH_AUTHORIZE_URL) ||
+  'https://app.hubspot.com/oauth/authorize';
 /** HubSpot rejects the flow if this scope is not granted; always request it. */
 const REQUIRED_HUBSPOT_SCOPE = 'crm.objects.contacts.read';
 
 /**
  * @param {string | undefined} raw from HUBSPOT_SCOPES (spaces or commas between scopes)
- * @returns {string} space-separated scopes for the authorize URL
+ * @returns {{ list: string[], scopeString: string }}
  */
-function oauthScopeString(raw) {
+function buildRequiredScopes(raw) {
+  const cleaned = stripEnvQuotes(raw);
   const ordered = [REQUIRED_HUBSPOT_SCOPE];
   const seen = new Set([REQUIRED_HUBSPOT_SCOPE]);
-  for (const part of String(raw ?? '').split(/[\s,]+/)) {
+  for (const part of cleaned.split(/[\s,]+/)) {
     const s = part.trim();
     if (s && !seen.has(s)) {
       seen.add(s);
       ordered.push(s);
     }
   }
-  return ordered.join(' ');
+  return { list: ordered, scopeString: ordered.join(' ') };
 }
 
-const SCOPES = oauthScopeString(process.env.HUBSPOT_SCOPES);
+/**
+ * Optional tiered scopes — HubSpot `optional_scope` param (see OAuth docs).
+ * @param {string | undefined} raw
+ * @returns {{ list: string[], scopeString: string }}
+ */
+function buildOptionalScopes(raw) {
+  const cleaned = stripEnvQuotes(raw);
+  if (!cleaned) return { list: [], scopeString: '' };
+  const ordered = [];
+  const seen = new Set();
+  for (const part of cleaned.split(/[\s,]+/)) {
+    const s = part.trim();
+    if (s && !seen.has(s)) {
+      seen.add(s);
+      ordered.push(s);
+    }
+  }
+  return { list: ordered, scopeString: ordered.join(' ') };
+}
+
+const { list: SCOPES_LIST, scopeString: SCOPES } = buildRequiredScopes(process.env.HUBSPOT_SCOPES);
+const OPTIONAL_SCOPES = buildOptionalScopes(process.env.HUBSPOT_OPTIONAL_SCOPES);
+
+/**
+ * HubSpot OAuth quickstart: encode query with encodeURIComponent (esp. scope uses %20 for spaces).
+ * @param {{ clientId: string, redirectUri: string, scope: string, state: string, optionalScope?: string }} p
+ */
+function buildHubSpotAuthorizeUrl(p) {
+  let url =
+    HUBSPOT_AUTH_BASE +
+    `?client_id=${encodeURIComponent(p.clientId)}` +
+    `&redirect_uri=${encodeURIComponent(p.redirectUri)}` +
+    `&scope=${encodeURIComponent(p.scope)}` +
+    `&state=${encodeURIComponent(p.state)}`;
+  if (p.optionalScope) {
+    url += `&optional_scope=${encodeURIComponent(p.optionalScope)}`;
+  }
+  return url;
+}
 
 const app = Fastify({ logger: false });
 
@@ -113,20 +168,35 @@ app.get('/connect', async (request, reply) => {
     return;
   }
 
-  const u = new URL(HUBSPOT_AUTH_BASE);
-  u.searchParams.set('client_id', CLIENT_ID);
-  u.searchParams.set('redirect_uri', REDIRECT_URI);
-  u.searchParams.set('scope', SCOPES);
-  u.searchParams.set('state', signed.signed);
+  const authorizeUrl = buildHubSpotAuthorizeUrl({
+    clientId: CLIENT_ID,
+    redirectUri: REDIRECT_URI,
+    scope: SCOPES,
+    state: signed.signed,
+    optionalScope: OPTIONAL_SCOPES.scopeString || undefined,
+  });
 
   logStructured('info', {
     event: 'oauth_connect_ready',
     route: '/connect',
     latencyMs: Date.now() - started,
     partnerStatus: null,
+    requestedScopes: SCOPES_LIST,
+    optionalScopes: OPTIONAL_SCOPES.list,
+    oauthHost: (() => {
+      try {
+        return new URL(HUBSPOT_AUTH_BASE).host;
+      } catch {
+        return null;
+      }
+    })(),
   });
 
-  return { authorizeUrl: u.toString() };
+  return {
+    authorizeUrl,
+    requestedScopes: SCOPES_LIST,
+    ...(OPTIONAL_SCOPES.list.length ? { optionalScopes: OPTIONAL_SCOPES.list } : {}),
+  };
 });
 
 app.get('/callback', async (request, reply) => {
